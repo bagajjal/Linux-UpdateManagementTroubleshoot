@@ -39,7 +39,7 @@ class RuleInfo:
 class LogLevel:
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
-    INFO = "WARNING"
+    INFO = "INFO"
     DEBUG = "DEBUG"
 
 def write_log_output(rule_id, log_level, log_msg, *result_msg_args):
@@ -62,8 +62,8 @@ def write_log_output(rule_id, log_level, log_msg, *result_msg_args):
                     rule_info.CheckResult = "Passed"
                 elif log_level == LogLevel.FAILED:
                     rule_info.CheckResult = "Failed"
-                elif log_level == LogLevel.WARNING:
-                    rule_info.CheckResult = "Warning"
+                elif log_level == LogLevel.INFO:
+                    rule_info.CheckResult = "Information"
 
                 rule_info.CheckResultMessageId = rule_info.RuleId + "." + rule_info.CheckResult
                 for arg in result_msg_args:
@@ -81,10 +81,6 @@ def tmp_init_rule_info_list():
     # Check the OS Version
     tmp_rule_info_list.append(RuleInfo("OSCheck", "Operating System", "supported OS versions (https://docs.microsoft.com/en-us/azure/automation/automation-update-management#clients)", \
                                        "", "", "prerequisites", "Prerequisite Checks", ""))
-
-    # Check if omsadmin.conf is present
-    tmp_rule_info_list.append(RuleInfo("OMSAdminConfCheck", "OMS Admin Config", "OMS Admin conf (" + oms_admin_conf_path + ") must be present", \
-                                       "", "", "servicehealth", "VM Service Health Check", ""))
 
     # Check for multiple workspaces
     tmp_rule_info_list.append(RuleInfo("MultiWorkspaceCheck", "Multi-homing", "OMS must be configured with only one workspace", \
@@ -240,29 +236,38 @@ def get_agent_endpoint():
     return None
 
 def check_oms_agent_installed():
-    if os.path.isdir(oms_agent_dir):
-        if os.path.isfile(oms_agent_log):
-            write_log_output("OMSAgentInstallCheck", LogLevel.SUCCESS, "OMS Agent is installed")
-        else:
-            write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed")
-        
-        # Check for multihoming of workspaces
-        directories = []
-        potential_workspaces = []
+    if os.path.isfile(oms_admin_conf_path):
+        write_log_output("OMSAgentInstallCheck", LogLevel.SUCCESS, "OMS Agent is installed")
+        oms_admin_file_content = "\t"
+        oms_admin_file = open(oms_admin_conf_path, "r")
+        for line in oms_admin_file:
+            oms_admin_file_content += line
 
-        for (dirpath, dirnames, filenames) in walk(oms_agent_dir):
-            directories.extend(dirnames)
-            break # Get the top level of directories
-
-        for directory in directories:
-            if len(directory) >= 32:
-                potential_workspaces.append(directory)
-
-        if len(potential_workspaces) > 1:
-            write_log_output("MultiWorkspaceCheck", LogLevel.WARNING, "OMS Agent is multihomed. List of workspaces: " + str(potential_workspaces))
-
+        write_log_output("OMSAgentInstallCheck", LogLevel.DEBUG, "OMS Admin conf contents:\n" + oms_admin_file_content)
     else:
-        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed")
+        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed. Couldn't find omsadmin.conf (" + oms_admin_conf_path + ")")
+        return
+
+    if os.path.isfile(oms_agent_log):
+        write_log_output("OMSAgentInstallCheck", LogLevel.SUCCESS, "OMS Agent is installed")
+    else:
+        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed. Couldn't find " + oms_agent_log)
+        return
+    
+    # Check for multihoming of workspaces
+    directories = []
+    potential_workspaces = []
+
+    for (dirpath, dirnames, filenames) in walk(oms_agent_dir):
+        directories.extend(dirnames)
+        break # Get the top level of directories
+
+    for directory in directories:
+        if len(directory) >= 32:
+            potential_workspaces.append(directory)
+
+    if len(potential_workspaces) > 1:
+        write_log_output("MultiWorkspaceCheck", LogLevel.INFO, "OMS Agent is multihomed. List of workspaces: " + str(potential_workspaces))
 
 def check_hybrid_worker_running():
     search_text = "ResourceSettings"
@@ -290,7 +295,13 @@ def check_hybrid_worker_running():
 
     os.chdir(automation_worker_path)
     nxOMSAutomationWorker=imp.load_source("nxOMSAutomationWorker", "./Scripts/nxOMSAutomationWorker.py")
-    if nxOMSAutomationWorker.Test_Marshall(resourceSetting) == [0] :
+    settings = nxOMSAutomationWorker.read_settings_from_mof_json(resourceSetting)
+    if not settings.auto_register_enabled:
+        write_log_output("HybridWorkerStatusCheck", LogLevel.FAILED, "Hybrid worker is not running")
+        write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "Update Management solution is not enabled. ResourceSettings:" + resourceSetting)
+        return
+
+    if nxOMSAutomationWorker.Test_Marshall(resourceSetting) == [0]:
         write_log_output("HybridWorkerStatusCheck", LogLevel.SUCCESS, "Hybrid worker is running")
     else:
         write_log_output("HybridWorkerStatusCheck", LogLevel.FAILED, "Hybrid worker is not running")
@@ -318,18 +329,6 @@ def is_process_running(process_name, search_criteria, output_name):
         return True, grep_output
     else:
         return False, grep_output
-
-def check_oms_admin():
-    if os.path.isfile(oms_admin_conf_path):
-        write_log_output("OMSAdminConfCheck", LogLevel.SUCCESS, "OMS Admin conf (" + oms_admin_conf_path + ") is present")
-        oms_admin_file_content = "\t"
-        oms_admin_file = open(oms_admin_conf_path, "r")
-        for line in oms_admin_file:
-            oms_admin_file_content += line
-
-        write_log_output("OMSAdminConfCheck", LogLevel.DEBUG, "OMS Admin conf contents:\n" + oms_admin_file_content)
-    else:
-        write_log_output("OMSAdminConfCheck", LogLevel.FAILED, "File: " + oms_admin_conf_path + " not found")
 
 def get_workspace():
     line = find_line_in_path("WORKSPACE", oms_admin_conf_path)
@@ -377,7 +376,6 @@ def main(output_path=None, return_json_output="False"):
 
     get_machine_info()
     check_os()
-    check_oms_admin()
     check_oms_agent_installed()
     check_oms_agent_running()
     check_hybrid_worker_package_present()
