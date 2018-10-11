@@ -372,7 +372,7 @@ def main(output_path=None, return_json_output="False"):
         exit()
 
     ## supported python version 2.4.x to 2.7.x
-    if not (sys.version_info.major == 2 and (sys.version_info.minor >= 4 or sys.version_info.minor <= 7)) : 
+    if not ((sys.version_info[0] == 2) and ((sys.version_info[1]>=4) and (sys.version_info[1] < 8))):
 	print("Unsupport python version:" + str(sys.version_info))
 	exit()
 
