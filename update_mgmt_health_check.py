@@ -180,14 +180,18 @@ def check_network_endpoints():
 
     # Agent service
     agent_endpoint = get_agent_endpoint()
-    if  agent_endpoint is not None and check_endpoint(workspace, agent_endpoint):
+    if  agent_endpoint is None:
+        write_log_output("AgentServiceCheck", LogLevel.FAILED, "Unable to get the registration endpoint")
+    elif  check_endpoint(workspace, agent_endpoint):
         write_log_output("AgentServiceCheck", LogLevel.SUCCESS, "TCP test for {" + agent_endpoint + "} (port 443) succeeded", agent_endpoint)
     else:
         write_log_output("AgentServiceCheck", LogLevel.FAILED, "TCP test for {" + agent_endpoint + "} (port 443) failed", agent_endpoint)
 
     # JRDS service
     jrds_endpoint = get_jrds_endpoint(workspace)
-    if jrds_endpoint is not None and check_endpoint(workspace, jrds_endpoint):
+    if jrds_endpoint is None:
+        write_log_output("JRDSConnectionCheck", LogLevel.FAILED, "Unable to get the operations endpoint")
+    elif jrds_endpoint is not None and check_endpoint(workspace, jrds_endpoint):
         write_log_output("JRDSConnectionCheck", LogLevel.SUCCESS, "TCP test for {" + jrds_endpoint + "} (port 443) succeeded", jrds_endpoint)
     else:
         write_log_output("JRDSConnectionCheck", LogLevel.FAILED, "TCP test for {" + jrds_endpoint + "} (port 443) succeeded", jrds_endpoint)
