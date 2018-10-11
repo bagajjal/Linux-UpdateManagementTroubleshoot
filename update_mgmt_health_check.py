@@ -270,6 +270,11 @@ def check_oms_agent_installed():
         write_log_output("MultiWorkspaceCheck", LogLevel.INFO, "OMS Agent is multihomed. List of workspaces: " + str(potential_workspaces))
 
 def check_hybrid_worker_running():
+    if os.path.isfile(current_mof) == False:
+        write_log_output("HybridWorkerStatusCheck", LogLevel.FAILED, "Hybrid worker is not running")
+        write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "current_mof file:(" + current_mof + ") is missing")
+        return
+
     search_text = "ResourceSettings"
     command = "file -b --mime-encoding " + current_mof
     current_mof_encoding = os.popen(command).read()
