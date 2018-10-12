@@ -48,10 +48,7 @@ def write_log_output(rule_id, log_level, log_msg, *result_msg_args):
 
     if(type(log_msg) != str): log_msg = str(log_msg)
 
-    if log_level == LogLevel.DEBUG:
-        log_msg = log_msg.replace("\n\t", "\n")
-        log_msg = log_msg.replace("\n", "\n\t")
-    else:
+    if log_level != LogLevel.DEBUG:
         # skip debug message for JSON output
         for rule_info in tmp_rule_info_list:
             if rule_info.RuleId == rule_id:
@@ -73,7 +70,7 @@ def write_log_output(rule_id, log_level, log_msg, *result_msg_args):
                 rule_info_list.append(rule_info)
                 break
 
-    output.append(log_level + ": " + log_msg + "\n")
+    output.append(log_level + ": " + log_msg)
 
 def tmp_init_rule_info_list():
     # CheckResult, CheckResultMessage, CheckResultMessageId, CheckResultMessageArguments will be filled later
@@ -245,9 +242,9 @@ def check_oms_agent_installed():
         oms_admin_file_content = "\t"
         oms_admin_file = open(oms_admin_conf_path, "r")
         for line in oms_admin_file:
-            oms_admin_file_content += line
+            oms_admin_file_content += line + "\t"
 
-        write_log_output("OMSAgentInstallCheck", LogLevel.DEBUG, "OMS Admin conf contents:\n" + oms_admin_file_content)
+        write_log_output("OMSAgentInstallCheck", LogLevel.DEBUG, "OMS Admin conf contents:" + oms_admin_file_content)
     else:
         write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed")
         return
@@ -289,8 +286,8 @@ def check_hybrid_worker_running():
         write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "Unable to fetch ResourceSettings from current_mof file:(" + current_mof + ") with file encoding:" + current_mof_encoding)
         return
 
-    r = string.replace("\str", "str", "") # This is required when this script is invoked from azure portal.
-    tmp = string.replace(tmp, r, "")
+    backslash = string.replace("\str", "str", "")
+    tmp = string.replace(tmp, backslash, "")
     tmp = string.replace(tmp, ";", "")
     tmp = string.replace(tmp, "\"[", "[")
     tmp = string.replace(tmp, "]\"", "]")
@@ -349,7 +346,7 @@ def get_workspace():
 
 def get_machine_info():
     hostname_output = os.popen("hostnamectl").read()
-    write_log_output("GetMachineInfo", LogLevel.DEBUG, "Machine Information:\n" + hostname_output)
+    write_log_output("GetMachineInfo", LogLevel.DEBUG, "Machine Information:" + hostname_output)
 
 def is_fairfax_region():
     oms_endpoint = find_line_in_path("OMS_ENDPOINT", oms_admin_conf_path)
@@ -395,7 +392,8 @@ def main(output_path=None, return_json_output="False"):
     if return_json_output == "True":
         print json.dumps([obj.__dict__ for obj in rule_info_list])
     else:
-        print "".join(output)
+        for line in output:
+            print line
         if output_path is not None:
             try: 
                 os.makedirs(output_path)
