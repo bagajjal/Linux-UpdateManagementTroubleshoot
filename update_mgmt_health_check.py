@@ -289,7 +289,8 @@ def check_hybrid_worker_running():
         write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "Unable to fetch ResourceSettings from current_mof file:(" + current_mof + ") with file encoding:" + current_mof_encoding)
         return
 
-    tmp = string.replace(tmp, "\\", "")
+    r = string.replace("\str", "str", "") # This is required when this script is invoked from azure portal.
+    tmp = string.replace(tmp, r, "")
     tmp = string.replace(tmp, ";", "")
     tmp = string.replace(tmp, "\"[", "[")
     tmp = string.replace(tmp, "]\"", "]")
