@@ -249,13 +249,13 @@ def check_oms_agent_installed():
 
         write_log_output("OMSAgentInstallCheck", LogLevel.DEBUG, "OMS Admin conf contents:\n" + oms_admin_file_content)
     else:
-        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed. Couldn't find omsadmin.conf (" + oms_admin_conf_path + ")")
+        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed")
         return
 
     if os.path.isfile(oms_agent_log):
         write_log_output("OMSAgentInstallCheck", LogLevel.SUCCESS, "OMS Agent is installed")
     else:
-        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed. Couldn't find " + oms_agent_log)
+        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed")
         return
     
     # Check for multihoming of workspaces
