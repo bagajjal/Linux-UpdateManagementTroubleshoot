@@ -81,7 +81,7 @@ def main(output_path=None, return_json_output="False"):
             print "Output is written to " + log_path
 
 def get_machine_info():
-    FNULL = open(os.devnull, 'w')
+    FNULL = open(os.devnull, "w")
     if subprocess.call(["which", "hostnamectl"], stdout=FNULL, stderr=FNULL) == 0:
         hostname_output = os.popen("hostnamectl").read()
         write_log_output(None, None, status_debug, empty_failure_reason, "Machine Information:" + hostname_output)
