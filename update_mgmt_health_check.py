@@ -87,7 +87,7 @@ def get_machine_info():
         write_log_output(None, None, status_debug, empty_failure_reason, "Machine Information:" + hostname_output)
 
 def check_os_version():
-    rule_id = "Linux-OSCheck"
+    rule_id = "Linux_OperatingSystemCheck"
     rule_group_id = "prerequisites"
 
     os_version = platform.platform()
@@ -108,7 +108,7 @@ def check_os_version():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, log_msg, supported_os_url)
 
 def check_oms_agent_installed():
-    rule_id = "Linux-OMSAgentInstallCheck"
+    rule_id = "Linux_OMSAgentInstallCheck"
     rule_group_id = "servicehealth"
 
     if os.path.isfile(oms_admin_conf_path) and os.path.isfile(oms_agent_log):
@@ -125,7 +125,7 @@ def check_oms_agent_installed():
         return
 
 def check_oms_agent_running():
-    rule_id = "Linux-OMSAgentStatusCheck"
+    rule_id = "Linux_OMSAgentStatusCheck"
     rule_group_id = "servicehealth"
 
     is_oms_agent_running, ps_output = is_process_running("omsagent", ["omsagent.log", "omsagent.conf"], "OMS Agent")
@@ -139,7 +139,7 @@ def check_multihoming():
     if os.path.isdir(oms_agent_dir) is False:
         return
 
-    rule_id = "Linux-MultiWorkspaceCheck"
+    rule_id = "Linux_MultiWorkspaceCheck"
     rule_group_id = "servicehealth"
 
     directories = []
@@ -158,7 +158,7 @@ def check_multihoming():
         write_log_output(rule_id, rule_group_id, status_warning, empty_failure_reason, "OMS Agent is multihomed. " + temp, temp)
 
 def check_hybrid_worker_package_present():
-    rule_id = "Linux-HybridWorkerPackgeCheck"
+    rule_id = "Linux_HybridWorkerPackgeCheck"
     rule_group_id = "servicehealth"
 
     if os.path.isfile("/opt/microsoft/omsconfig/modules/nxOMSAutomationWorker/VERSION") and \
@@ -168,7 +168,7 @@ def check_hybrid_worker_package_present():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Hybrid worker package is not present")
 
 def check_hybrid_worker_running():
-    rule_id = "Linux-HybridWorkerStatusCheck"
+    rule_id = "Linux_HybridWorkerStatusCheck"
     rule_group_id = "servicehealth"
 
     if os.path.isfile(current_mof) == False:
@@ -214,7 +214,7 @@ def check_hybrid_worker_running():
         write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "nxOMSAutomationWorker.py path:" + automation_worker_path)
 
 def check_general_internet_connectivity():
-    rule_id = "Linux-InternetConnectionCheck"
+    rule_id = "Linux_InternetConnectionCheck"
     rule_group_id = "connectivity"
 
     if check_endpoint(None, "bing.com") and check_endpoint(None, "google.com"):
@@ -223,7 +223,7 @@ def check_general_internet_connectivity():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Machine is not connected to internet")
 
 def check_agent_service_endpoint():
-    rule_id = "Linux-AgentServiceCheck"
+    rule_id = "Linux_AgentServiceCheck"
     rule_group_id = "connectivity"
 
     agent_endpoint = get_agent_endpoint()
@@ -235,7 +235,7 @@ def check_agent_service_endpoint():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + agent_endpoint + "} (port 443) failed", agent_endpoint)
 
 def check_jrds_endpoint(workspace):
-    rule_id = "Linux-JRDSConnectionCheck"
+    rule_id = "Linux_JRDSConnectionCheck"
     rule_group_id = "connectivity"
 
     jrds_endpoint = get_jrds_endpoint(workspace)
@@ -247,7 +247,7 @@ def check_jrds_endpoint(workspace):
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + jrds_endpoint + "} (port 443) failed", jrds_endpoint)
 
 def check_log_analytics_endpoints():
-    rule_id = "Linux-LogAnalyticsCheck"
+    rule_id = "Linux_LogAnalyticsCheck"
     rule_group_id = "connectivity"
 
     i = 0
