@@ -11,11 +11,11 @@ import json
 import string
 import platform
 import re
+import subprocess
 
 from os import walk
 
 rule_info_list = []
-tmp_rule_info_list = []
 output = []
 
 return_json_output = False
@@ -23,110 +23,73 @@ oms_admin_conf_path = "/etc/opt/microsoft/omsagent/conf/omsadmin.conf"
 oms_agent_dir = "/var/opt/microsoft/omsagent"
 oms_agent_log = "/var/opt/microsoft/omsagent/log/omsagent.log"
 current_mof = "/etc/opt/omi/conf/omsconfig/configuration/Current.mof"
+status_passed = "Passed"
+status_failed = "Failed"
+status_warning = "Warning"
+status_debug = "Debug"
+empty_failure_reason = ""
+workspace = ""
 
 class RuleInfo:
-    def __init__(self, rule_id, rule_name, rule_description, status, log_msg, rule_group_id, rule_group_name, result_msg_id):
+    def __init__(self, rule_id, rule_group_id, status, result_msg_id):
         self.RuleId = rule_id
-        self.RuleName = rule_name
-        self.RuleDescription = rule_description
         self.RuleGroupId = rule_group_id
-        self.RuleGroupName = rule_group_name
         self.CheckResult = status
-        self.CheckResultMessage = log_msg
         self.CheckResultMessageId = result_msg_id
         self.CheckResultMessageArguments = list()
 
-class LogLevel:
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-    INFO = "INFO"
-    DEBUG = "DEBUG"
+def main(output_path=None, return_json_output="False"):
+    if os.geteuid() != 0:
+        print "Please run this script in sudo"
+        exit()
 
-def write_log_output(rule_id, log_level, log_msg, *result_msg_args):
-    global output
-    global rule_info_list
+    # supported python version 2.4.x to 2.7.x
+    if not ((sys.version_info[0] == 2) and ((sys.version_info[1]>=4) and (sys.version_info[1] < 8))):
+	print("Unsupport python version:" + str(sys.version_info))
+	exit()
 
-    if(type(log_msg) != str): log_msg = str(log_msg)
+    global workspace
+    workspace = get_workspace()
 
-    if log_level != LogLevel.DEBUG:
-        # skip debug message for JSON output
-        for rule_info in tmp_rule_info_list:
-            if rule_info.RuleId == rule_id:
-                rule_info.RuleId = "Linux-" + rule_info.RuleId
-                rule_info.CheckResultMessage = log_msg
+    get_machine_info()
+    check_os_version()
+    check_oms_agent_installed()
+    check_oms_agent_running()
+    check_multihoming()
+    check_hybrid_worker_package_present()
+    check_hybrid_worker_running()
+    check_general_internet_connectivity()
+    check_agent_service_endpoint()
+    check_jrds_endpoint(workspace)
+    check_log_analytics_endpoints()
 
-                if log_level == LogLevel.SUCCESS:
-                    rule_info.CheckResult = "Passed"
-                elif log_level == LogLevel.FAILED:
-                    rule_info.CheckResult = "Failed"
-                elif log_level == LogLevel.INFO:
-                    rule_info.CheckResult = "Information"
+    if return_json_output == "True":
+        print json.dumps([obj.__dict__ for obj in rule_info_list])
+    else:
+        for line in output:
+            print line
 
-                rule_info.CheckResultMessageId = rule_info.RuleId + "." + rule_info.CheckResult
-                for arg in result_msg_args:
-                    rule_info.CheckResultMessageArguments.append(arg)
-            
-                # Finally add to output list
-                rule_info_list.append(rule_info)
-                break
+        if output_path is not None:
+            try:
+                os.makedirs(output_path)
+            except OSError:
+                if not os.path.isdir(output_path):
+                    raise
+            log_path = output_path + "/healthcheck-" + str(datetime.datetime.utcnow().isoformat()) + ".log"
+            f = open(log_path, "w")
+            f.write("".join(output))
+            print "Output is written to " + log_path
 
-    output.append(log_level + ": " + log_msg)
+def get_machine_info():
+    FNULL = open(os.devnull, 'w')
+    if subprocess.call(["which", "hostnamectl"], stdout=FNULL, stderr=FNULL) == 0:
+        hostname_output = os.popen("hostnamectl").read()
+        write_log_output(None, None, status_debug, empty_failure_reason, "Machine Information:" + hostname_output)
 
-def tmp_init_rule_info_list():
-    # CheckResult, CheckResultMessage, CheckResultMessageId, CheckResultMessageArguments will be filled later
- 
-    # Check the OS Version
-    tmp_rule_info_list.append(RuleInfo("OSCheck", "Operating System", "supported OS versions (https://docs.microsoft.com/en-us/azure/automation/automation-update-management#clients)", \
-                                       "", "", "prerequisites", "Prerequisite Checks", ""))
+def check_os_version():
+    rule_id = "Linux-OSCheck"
+    rule_group_id = "prerequisites"
 
-    # Check for multiple workspaces
-    tmp_rule_info_list.append(RuleInfo("MultiWorkspaceCheck", "Multi-homing", "OMS must be configured with only one workspace", \
-                                       "", "", "servicehealth", "VM Service Health Check", ""))
-
-    # Check if OMSAgent is installed
-    tmp_rule_info_list.append(RuleInfo("OMSAgentInstallCheck", "OMS Agent", "OMS Agent must be installed on the machine", \
-                                       "", "", "servicehealth", "VM Service Health Check", ""))
-
-    # Check if OMSAgent is running
-    tmp_rule_info_list.append(RuleInfo("OMSAgentStatusCheck", "OMS Agent status", "OMS Agent must be running on the machine", \
-                                       "", "", "servicehealth", "VM Service Health Check", ""))
-
-    # Check if hybrid worker package is present
-    tmp_rule_info_list.append(RuleInfo("HybridWorkerPackgeCheck", "Hybrid worker", "Hybrid worker package must be present on the machine", \
-                                       "", "", "servicehealth", "VM Service Health Check", ""))
-
-    # Check if hybrid worker is running
-    tmp_rule_info_list.append(RuleInfo("HybridWorkerStatusCheck", "Hybrid worker status", "Hybrid worker must be running on the machine", \
-                                       "", "", "servicehealth", "VM Service Health Check", ""))
-
-    # Check the general internet connectivity
-    tmp_rule_info_list.append(RuleInfo("InternetConnectionCheck", "General Internet connectivity", "Machine must be connected to internet", \
-                                       "", "", "connectivity", "Connectivity Check", ""))
-
-    # Check the AgentService connectivity
-    tmp_rule_info_list.append(RuleInfo("AgentServiceCheck", "Registration endpoint", "Proxy and firewall configuration must allow Automation Hybrid Worker agent to communicate with registration endpoint", \
-                                       "",  "", "connectivity", "Connectivity Check", ""))
-    # Check the JRDS connectivity
-    tmp_rule_info_list.append(RuleInfo("JRDSConnectionCheck", "Operations endpoint", "Proxy and firewall configuration must allow Automation Hybrid Worker agent to communicate with operations endpoint", \
-                                       "", "", "connectivity", "Connectivity Check", ""))
-
-    # Check the ODS connectivity
-    tmp_rule_info_list.append(RuleInfo("ODSConnectionCheck1", "ODS endpoint1", "Proxy and firewall configuration must allow Automation Hybrid Worker agent to communicate with ODS endpoint", \
-                                       "", "", "connectivity", "Connectivity Check", ""))
-
-    # Check the ODS connectivity
-    tmp_rule_info_list.append(RuleInfo("ODSConnectionCheck2", "ODS endpoint2", "Proxy and firewall configuration must allow Automation Hybrid Worker agent to communicate with ODS endpoint", \
-                                       "", "", "connectivity", "Connectivity Check", ""))
-
-    # Check the ODS connectivity
-    tmp_rule_info_list.append(RuleInfo("ODSConnectionCheck3", "ODS endpoint3", "Proxy and firewall configuration must allow Automation Hybrid Worker agent to communicate with ODS endpoint", \
-                                       "", "", "connectivity", "Connectivity Check", ""))
-
-    # Check the ODS connectivity
-    tmp_rule_info_list.append(RuleInfo("ODSConnectionCheck4", "ODS endpoint4", "Proxy and firewall configuration must allow Automation Hybrid Worker agent to communicate with ODS endpoint", \
-                                       "", "", "connectivity", "Connectivity Check", ""))
-
-def check_os():
     os_version = platform.platform()
     supported_os_url = "https://docs.microsoft.com/en-us/azure/automation/automation-update-management#clients"
     # We support (Ubuntu 14.04, Ubuntu 16.04, SuSE 11, SuSE 12, Redhat 6, Redhat 7, CentOs 6, CentOs 7)
@@ -138,15 +101,185 @@ def check_os():
        re.search("redhat-7", os_version, re.IGNORECASE) or \
        re.search("centos-6", os_version, re.IGNORECASE) or \
        re.search("centos-7", os_version, re.IGNORECASE) :
-        write_log_output("OSCheck", LogLevel.SUCCESS, "Operating System version is supported")
+        log_msg = "Operating system version is supported"
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, log_msg)
     else:
-        write_log_output("OSCheck", LogLevel.DEBUG, os_version)
-        write_log_output("OSCheck", LogLevel.SUCCESS, "Operating System version is not supported. Supported versions listed here: " + supported_os_url, supported_os_url)
+        log_msg = "Operating System version (" + os_version + ") is not supported. Supported versions listed here: " + supported_os_url
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, log_msg, supported_os_url)
+
+def check_oms_agent_installed():
+    rule_id = "Linux-OMSAgentInstallCheck"
+    rule_group_id = "servicehealth"
+
+    if os.path.isfile(oms_admin_conf_path) and os.path.isfile(oms_agent_log):
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "OMS Agent is installed")
+
+        oms_admin_file_content = "\t"
+        oms_admin_file = open(oms_admin_conf_path, "r")
+        for line in oms_admin_file:
+            oms_admin_file_content += line + "\t"
+
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "OMS Admin conf contents:" + oms_admin_file_content)
+    else:
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "OMS Agent is not installed")
+        return
+
+def check_oms_agent_running():
+    rule_id = "Linux-OMSAgentStatusCheck"
+    rule_group_id = "servicehealth"
+
+    is_oms_agent_running, ps_output = is_process_running("omsagent", ["omsagent.log", "omsagent.conf"], "OMS Agent")
+    if is_oms_agent_running:
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "OMS Agent is running")
+    else:
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "OMS Agent is not running")
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, ps_output)
+
+def check_multihoming():
+    if os.path.isdir(oms_agent_dir) is False:
+        return
+
+    rule_id = "Linux-MultiWorkspaceCheck"
+    rule_group_id = "servicehealth"
+
+    directories = []
+    potential_workspaces = []
+
+    for (dirpath, dirnames, filenames) in walk(oms_agent_dir):
+        directories.extend(dirnames)
+        break # Get the top level of directories
+
+    for directory in directories:
+        if len(directory) >= 32:
+            potential_workspaces.append(directory)
+
+    if len(potential_workspaces) > 1:
+        temp = "List of workspaces: " + str(potential_workspaces)
+        write_log_output(rule_id, rule_group_id, status_warning, empty_failure_reason, "OMS Agent is multihomed. " + temp, temp)
+
+def check_hybrid_worker_package_present():
+    rule_id = "Linux-HybridWorkerPackgeCheck"
+    rule_group_id = "servicehealth"
+
+    if os.path.isfile("/opt/microsoft/omsconfig/modules/nxOMSAutomationWorker/VERSION") and \
+       os.path.isfile("/opt/microsoft/omsconfig/modules/nxOMSAutomationWorker/DSCResources/MSFT_nxOMSAutomationWorkerResource/automationworker/worker/configuration.py"):
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "Hybrid worker package is present")
+    else:
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Hybrid worker package is not present")
+
+def check_hybrid_worker_running():
+    rule_id = "Linux-HybridWorkerStatusCheck"
+    rule_group_id = "servicehealth"
+
+    if os.path.isfile(current_mof) == False:
+        write_log_output(rule_id, rule_group_id, status_failed, "MissingCurrentMofFile", "Hybrid worker is not running. current_mof file:(" + current_mof + ") is missing", current_mof)
+        return
+
+    search_text = "ResourceSettings"
+    command = "file -b --mime-encoding " + current_mof
+    current_mof_encoding = os.popen(command).read()
+    resourceSetting = find_line_in_file("ResourceSettings", current_mof, current_mof_encoding);
+    if resourceSetting is None:
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Hybrid worker is not running")
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "Unable to get ResourceSettings from current_mof file:(" + current_mof + ") with file encoding:" + current_mof_encoding)
+        return
+
+    backslash = string.replace("\str", "str", "")
+    resourceSetting = string.replace(resourceSetting, backslash, "")
+    resourceSetting = string.replace(resourceSetting, ";", "")
+    resourceSetting = string.replace(resourceSetting, "\"[", "[")
+    resourceSetting = string.replace(resourceSetting, "]\"", "]")
+    resourceSetting = resourceSetting.split("=")[1].strip()
+
+    automation_worker_path = "/opt/microsoft/omsconfig/Scripts/"
+    if (sys.version_info.major == 2) :
+        if (sys.version_info.minor >= 6) :
+            automation_worker_path += "2.6x-2.7x"
+        else:
+            automation_worker_path += "2.4x-2.5x"
+
+    os.chdir(automation_worker_path)
+    nxOMSAutomationWorker=imp.load_source("nxOMSAutomationWorker", "./Scripts/nxOMSAutomationWorker.py")
+    settings = nxOMSAutomationWorker.read_settings_from_mof_json(resourceSetting)
+    if not settings.auto_register_enabled:
+        write_log_output(rule_id, rule_group_id, status_failed, "UpdateManagementSolutionDisabled", "Hybrid worker is not running")
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "Update Management solution is not enabled. ResourceSettings:" + resourceSetting)
+        return
+
+    if nxOMSAutomationWorker.Test_Marshall(resourceSetting) == [0]:
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "Hybrid worker is running")
+    else:
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Hybrid worker is not running")
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "ResourceSettings:" + resourceSetting + " read from current_mof file:(" + current_mof + ")")
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "nxOMSAutomationWorker.py path:" + automation_worker_path)
+
+def check_general_internet_connectivity():
+    rule_id = "Linux-InternetConnectionCheck"
+    rule_group_id = "connectivity"
+
+    if check_endpoint(None, "bing.com") and check_endpoint(None, "google.com"):
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "Machine is connected to internet")
+    else:
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Machine is not connected to internet")
+
+def check_agent_service_endpoint():
+    rule_id = "Linux-AgentServiceCheck"
+    rule_group_id = "connectivity"
+
+    agent_endpoint = get_agent_endpoint()
+    if  agent_endpoint is None:
+        write_log_output(rule_id, rule_group_id, status_failed, "UnableToGetEndpoint", "Unable to get the registration (agent service) endpoint")
+    elif  check_endpoint(None, agent_endpoint):
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "TCP test for {" + agent_endpoint + "} (port 443) succeeded", agent_endpoint)
+    else:
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + agent_endpoint + "} (port 443) failed", agent_endpoint)
+
+def check_jrds_endpoint(workspace):
+    rule_id = "Linux-JRDSConnectionCheck"
+    rule_group_id = "connectivity"
+
+    jrds_endpoint = get_jrds_endpoint(workspace)
+    if jrds_endpoint is None:
+        write_log_output(rule_id, rule_group_id, status_failed, "UnableToGetEndpoint", "Unable to get the operations (JRDS) endpoint")
+    elif jrds_endpoint is not None and check_endpoint(workspace, jrds_endpoint):
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "TCP test for {" + jrds_endpoint + "} (port 443) succeeded", jrds_endpoint)
+    else:
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + jrds_endpoint + "} (port 443) failed", jrds_endpoint)
+
+def check_log_analytics_endpoints():
+    rule_id = "Linux-LogAnalyticsCheck"
+    rule_group_id = "connectivity"
+
+    i = 0
+    if is_fairfax_region() is True:
+        fairfax_log_analytics_endpoints = ["usge-jobruntimedata-prod-1.usgovtrafficmanager.net", "usge-agentservice-prod-1.usgovtrafficmanager.net", 
+                    "*.ods.opinsights.azure.us", "*.oms.opinsights.azure.us" ]
+
+        for endpoint in fairfax_log_analytics_endpoints:
+            i += 1
+            if "*" in endpoint and workspace is not None:
+                endpoint = endpoint.replace("*", workspace)
+
+            if check_endpoint(workspace, endpoint):
+                write_log_output(rule_id + str(i), rule_group_id, status_passed, empty_failure_reason, "TCP test for {" + endpoint + "} (port 443) succeeded", endpoint)
+            else:
+                write_log_output(rule_id + str(i), rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + endpoint + "} (port 443) failed", endpoint)
+    else:
+        log_analytics_endpoints = ["*.ods.opinsights.azure.com", "*.oms.opinsights.azure.com", "ods.systemcenteradvisor.com"]
+        for endpoint in log_analytics_endpoints:
+            i += 1
+            if "*" in endpoint and workspace is not None:
+                endpoint = endpoint.replace("*", workspace)
+
+            if check_endpoint(workspace, endpoint):
+                write_log_output(rule_id + str(i), rule_group_id, status_passed, empty_failure_reason, "TCP test for {" + endpoint + "} (port 443) succeeded", endpoint)
+            else:
+                write_log_output(rule_id + str(i), rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + endpoint + "} (port 443) failed", endpoint)
 
 def check_endpoint(workspace, endpoint):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     new_endpoint = None
-    
+
     if "*" in endpoint and workspace is not None:
         new_endpoint = endpoint.replace("*", workspace)
     elif "*" not in endpoint:
@@ -166,169 +299,22 @@ def check_endpoint(workspace, endpoint):
     else:
         return False
 
-def check_network_endpoints():
-    workspace = get_workspace()
-
-    # General intenet connection
-    if check_endpoint(workspace, "bing.com") and check_endpoint(workspace, "google.com"):
-        write_log_output("InternetConnectionCheck", LogLevel.SUCCESS, "Machine is connected to internet")
-    else:
-        write_log_output("InternetConnectionCheck", LogLevel.FAILED, "Machine is not connected to internet")
-
-    # Agent service
-    agent_endpoint = get_agent_endpoint()
-    if  agent_endpoint is None:
-        write_log_output("AgentServiceCheck", LogLevel.FAILED, "Unable to get the registration endpoint")
-    elif  check_endpoint(workspace, agent_endpoint):
-        write_log_output("AgentServiceCheck", LogLevel.SUCCESS, "TCP test for {" + agent_endpoint + "} (port 443) succeeded", agent_endpoint)
-    else:
-        write_log_output("AgentServiceCheck", LogLevel.FAILED, "TCP test for {" + agent_endpoint + "} (port 443) failed", agent_endpoint)
-
-    # JRDS service
-    jrds_endpoint = get_jrds_endpoint(workspace)
-    if jrds_endpoint is None:
-        write_log_output("JRDSConnectionCheck", LogLevel.FAILED, "Unable to get the operations endpoint")
-    elif jrds_endpoint is not None and check_endpoint(workspace, jrds_endpoint):
-        write_log_output("JRDSConnectionCheck", LogLevel.SUCCESS, "TCP test for {" + jrds_endpoint + "} (port 443) succeeded", jrds_endpoint)
-    else:
-        write_log_output("JRDSConnectionCheck", LogLevel.FAILED, "TCP test for {" + jrds_endpoint + "} (port 443) succeeded", jrds_endpoint)
-
-    ods_endpoints = ["*.ods.opinsights.azure.com", "*.oms.opinsights.azure.com", "ods.systemcenteradvisor.com"]
-
-    fairfax_endpoints = ["usge-jobruntimedata-prod-1.usgovtrafficmanager.net", "usge-agentservice-prod-1.usgovtrafficmanager.net", 
-                    "*.ods.opinsights.azure.us", "*.oms.opinsights.azure.us" ]
-
-    i = 0
-    if is_fairfax_region() is True:
-        for endpoint in fairfax_endpoints:
-            i += 1
-            if "*" in endpoint and workspace is not None:
-                endpoint = endpoint.replace("*", workspace)
-
-            if check_endpoint(workspace, endpoint):
-                write_log_output("ODSConnectionCheck" + str(i), LogLevel.SUCCESS, "TCP test for {" + endpoint + "} (port 443) succeeded", endpoint)
-            else:
-                write_log_output("ODSConnectionCheck" + str(i), LogLevel.FAILED, "TCP test for {" + endpoint + "} (port 443) failed", endpoint)
-    else:
-        for endpoint in ods_endpoints:
-            i += 1
-            if "*" in endpoint and workspace is not None:
-                endpoint = endpoint.replace("*", workspace)
-
-            if check_endpoint(workspace, endpoint):
-                write_log_output("ODSConnectionCheck" + str(i), LogLevel.SUCCESS, "TCP test for {" + endpoint + "} (port 443) succeeded", endpoint)
-            else:
-                write_log_output("ODSConnectionCheck" + str(i), LogLevel.FAILED, "TCP test for {" + endpoint + "} (port 443) failed", endpoint)
 
 def get_jrds_endpoint(workspace):
     if workspace is not None:
         worker_conf_path = "/var/opt/microsoft/omsagent/" + workspace + "/state/automationworker/worker.conf"
-        line = find_line_in_path("jrds_base_uri", worker_conf_path)
+        line = find_line_in_file("jrds_base_uri", worker_conf_path)
         if line is not None:
             return line.split("=")[1].split("/")[2].strip()
 
     return None
 
 def get_agent_endpoint():
-    line = find_line_in_path("agentservice", oms_admin_conf_path)
+    line = find_line_in_file("agentservice", oms_admin_conf_path)
     if line is not None:
         return line.split("=")[1].split("/")[2].strip()
 
     return None
-
-def check_oms_agent_installed():
-    if os.path.isfile(oms_admin_conf_path):
-        write_log_output("OMSAgentInstallCheck", LogLevel.SUCCESS, "OMS Agent is installed")
-        oms_admin_file_content = "\t"
-        oms_admin_file = open(oms_admin_conf_path, "r")
-        for line in oms_admin_file:
-            oms_admin_file_content += line + "\t"
-
-        write_log_output("OMSAgentInstallCheck", LogLevel.DEBUG, "OMS Admin conf contents:" + oms_admin_file_content)
-    else:
-        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed")
-        return
-
-    if os.path.isfile(oms_agent_log):
-        write_log_output("OMSAgentInstallCheck", LogLevel.SUCCESS, "OMS Agent is installed")
-    else:
-        write_log_output("OMSAgentInstallCheck", LogLevel.FAILED, "OMS Agent is not installed")
-        return
-    
-    # Check for multihoming of workspaces
-    directories = []
-    potential_workspaces = []
-
-    for (dirpath, dirnames, filenames) in walk(oms_agent_dir):
-        directories.extend(dirnames)
-        break # Get the top level of directories
-
-    for directory in directories:
-        if len(directory) >= 32:
-            potential_workspaces.append(directory)
-
-    if len(potential_workspaces) > 1:
-        write_log_output("MultiWorkspaceCheck", LogLevel.INFO, "OMS Agent is multihomed. List of workspaces: " + str(potential_workspaces))
-
-def check_hybrid_worker_running():
-    if os.path.isfile(current_mof) == False:
-        write_log_output("HybridWorkerStatusCheck", LogLevel.FAILED, "Hybrid worker is not running")
-        write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "current_mof file:(" + current_mof + ") is missing")
-        return
-
-    search_text = "ResourceSettings"
-    command = "file -b --mime-encoding " + current_mof
-    current_mof_encoding = os.popen(command).read()
-
-    tmp = find_line_in_path("ResourceSettings", current_mof, current_mof_encoding);
-    if tmp is None:
-        write_log_output("HybridWorkerStatusCheck", LogLevel.FAILED, "Hybrid worker is not running")
-        write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "Unable to fetch ResourceSettings from current_mof file:(" + current_mof + ") with file encoding:" + current_mof_encoding)
-        return
-
-    backslash = string.replace("\str", "str", "")
-    tmp = string.replace(tmp, backslash, "")
-    tmp = string.replace(tmp, ";", "")
-    tmp = string.replace(tmp, "\"[", "[")
-    tmp = string.replace(tmp, "]\"", "]")
-    resourceSetting = tmp.split("=")[1].strip()
-
-    automation_worker_path = "/opt/microsoft/omsconfig/Scripts/"
-    if (sys.version_info.major == 2) :
-        if (sys.version_info.minor >= 6) :
-            automation_worker_path += "2.6x-2.7x"
-        else:
-            automation_worker_path += "2.4x-2.5x"
-
-    os.chdir(automation_worker_path)
-    nxOMSAutomationWorker=imp.load_source("nxOMSAutomationWorker", "./Scripts/nxOMSAutomationWorker.py")
-    settings = nxOMSAutomationWorker.read_settings_from_mof_json(resourceSetting)
-    if not settings.auto_register_enabled:
-        write_log_output("HybridWorkerStatusCheck", LogLevel.FAILED, "Hybrid worker is not running")
-        write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "Update Management solution is not enabled. ResourceSettings:" + resourceSetting)
-        return
-
-    if nxOMSAutomationWorker.Test_Marshall(resourceSetting) == [0]:
-        write_log_output("HybridWorkerStatusCheck", LogLevel.SUCCESS, "Hybrid worker is running")
-    else:
-        write_log_output("HybridWorkerStatusCheck", LogLevel.FAILED, "Hybrid worker is not running")
-        write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "ResourceSettings:" + resourceSetting + " read from current_mof file:(" + current_mof + ")")
-        write_log_output("HybridWorkerStatusCheck", LogLevel.DEBUG, "nxOMSAutomationWorker.py path:" + automation_worker_path)
-
-def check_hybrid_worker_package_present():
-    if os.path.isfile("/opt/microsoft/omsconfig/modules/nxOMSAutomationWorker/VERSION") and \
-       os.path.isfile("/opt/microsoft/omsconfig/modules/nxOMSAutomationWorker/DSCResources/MSFT_nxOMSAutomationWorkerResource/automationworker/worker/configuration.py"):
-        write_log_output("HybridWorkerPackgeCheck", LogLevel.SUCCESS, "Hybrid worker package is present")
-    else:
-        write_log_output("HybridWorkerPackgeCheck", LogLevel.FAILED, "Hybrid worker package is not present")
-
-def check_oms_agent_running():
-    is_oms_agent_running, ps_output = is_process_running("omsagent", ["omsagent.log", "omsagent.conf"], "OMS Agent")
-    if is_oms_agent_running:
-        write_log_output("OMSAgentStatusCheck", LogLevel.SUCCESS, "OMS Agent is running")
-    else:
-        write_log_output("OMSAgentStatusCheck", LogLevel.FAILED, "OMS Agent is not running")
-        write_log_output("OMSAgentStatusCheck", LogLevel.DEBUG, ps_output)
 
 def is_process_running(process_name, search_criteria, output_name):
     grep_output = os.popen("ps aux | grep " + process_name).read()
@@ -338,22 +324,18 @@ def is_process_running(process_name, search_criteria, output_name):
         return False, grep_output
 
 def get_workspace():
-    line = find_line_in_path("WORKSPACE", oms_admin_conf_path)
+    line = find_line_in_file("WORKSPACE", oms_admin_conf_path)
     if line is not None:
         return line.split("=")[1].strip()
 
     return None
 
-def get_machine_info():
-    hostname_output = os.popen("hostnamectl").read()
-    write_log_output("GetMachineInfo", LogLevel.DEBUG, "Machine Information:" + hostname_output)
-
 def is_fairfax_region():
-    oms_endpoint = find_line_in_path("OMS_ENDPOINT", oms_admin_conf_path)
+    oms_endpoint = find_line_in_file("OMS_ENDPOINT", oms_admin_conf_path)
     if oms_endpoint is not None:
         return ".us" in oms_endpoint.split("=")[1]
 
-def find_line_in_path(search_text, path, file_encoding=""):
+def find_line_in_file(search_text, path, file_encoding=""):
     if os.path.isfile(path):
         if file_encoding == "":
             current_file = open(path, "r")
@@ -368,42 +350,28 @@ def find_line_in_path(search_text, path, file_encoding=""):
         current_file.close()
     return None
 
-def main(output_path=None, return_json_output="False"):
-    if os.geteuid() != 0:
-        print "Please run this script in sudo"
-        exit()
 
-    ## supported python version 2.4.x to 2.7.x
-    if not ((sys.version_info[0] == 2) and ((sys.version_info[1]>=4) and (sys.version_info[1] < 8))):
-	print("Unsupport python version:" + str(sys.version_info))
-	exit()
+def write_log_output(rule_id, rule_group_id, status, failure_reason, log_msg, *result_msg_args):
+    global output
+    global rule_info_list
 
-    # initialize the rule_info list
-    tmp_init_rule_info_list()
+    if(type(log_msg) != str): log_msg = str(log_msg)
 
-    get_machine_info()
-    check_os()
-    check_oms_agent_installed()
-    check_oms_agent_running()
-    check_hybrid_worker_package_present()
-    check_hybrid_worker_running()
-    check_network_endpoints()
+    if status != status_debug:
+        if failure_reason == empty_failure_reason:
+            result_msg_id = rule_id + "." + status
+        else:
+            result_msg_id = rule_id + "." + status + "." + failure_reason
 
-    if return_json_output == "True":
-        print json.dumps([obj.__dict__ for obj in rule_info_list])
-    else:
-        for line in output:
-            print line
-        if output_path is not None:
-            try: 
-                os.makedirs(output_path)
-            except OSError:
-                if not os.path.isdir(output_path):
-                    raise
-            log_path = output_path + "/healthcheck-" + str(datetime.datetime.utcnow().isoformat()) + ".log"
-            f = open(log_path, "w")
-            f.write("".join(output))
-            print "Output is written to " + log_path
+        current_rule_info = RuleInfo(rule_id, rule_group_id, status, result_msg_id)
+
+        result_msg_args_list = []
+        for arg in result_msg_args:
+            current_rule_info.CheckResultMessageArguments.append(arg)
+
+        rule_info_list.append(current_rule_info)
+
+    output.append(status + ": " + log_msg)
 
 if __name__ == "__main__":
     if len(sys.argv) > 2:
