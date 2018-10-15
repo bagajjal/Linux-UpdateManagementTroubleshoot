@@ -101,8 +101,7 @@ def check_os_version():
        re.search("redhat-7", os_version, re.IGNORECASE) or \
        re.search("centos-6", os_version, re.IGNORECASE) or \
        re.search("centos-7", os_version, re.IGNORECASE) :
-        log_msg = "Operating system version is supported"
-        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, log_msg)
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "Operating system version is supported")
     else:
         log_msg = "Operating System version (" + os_version + ") is not supported. Supported versions listed here: " + supported_os_url
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, log_msg, supported_os_url)
@@ -110,9 +109,10 @@ def check_os_version():
 def check_oms_agent_installed():
     rule_id = "Linux_OMSAgentInstallCheck"
     rule_group_id = "servicehealth"
+    oms_agent_troubleshooting_url = "https://github.com/Microsoft/OMS-Agent-for-Linux/blob/master/docs/Troubleshooting.md"
 
     if os.path.isfile(oms_admin_conf_path) and os.path.isfile(oms_agent_log):
-        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "OMS Agent is installed")
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "OMS (Operations Management Suite) Agent is installed")
 
         oms_admin_file_content = "\t"
         oms_admin_file = open(oms_admin_conf_path, "r")
@@ -121,25 +121,28 @@ def check_oms_agent_installed():
 
         write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "OMS Admin conf contents:" + oms_admin_file_content)
     else:
-        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "OMS Agent is not installed")
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "OMS (Operations Management Suite) Agent is not installed", oms_agent_troubleshooting_url)
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "OMS Agent troubleshooting guide:" + oms_agent_troubleshooting_url)
         return
 
 def check_oms_agent_running():
     rule_id = "Linux_OMSAgentStatusCheck"
     rule_group_id = "servicehealth"
+    oms_agent_troubleshooting_url = "https://github.com/Microsoft/OMS-Agent-for-Linux/blob/master/docs/Troubleshooting.md"
 
     is_oms_agent_running, ps_output = is_process_running("omsagent", ["omsagent.log", "omsagent.conf"], "OMS Agent")
     if is_oms_agent_running:
         write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "OMS Agent is running")
     else:
-        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "OMS Agent is not running")
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "OMS Agent is not running", oms_agent_troubleshooting_url)
         write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, ps_output)
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "OMS Agent troubleshooting guide:" + oms_agent_troubleshooting_url)
 
 def check_multihoming():
     if os.path.isdir(oms_agent_dir) is False:
         return
 
-    rule_id = "Linux_MultiWorkspaceCheck"
+    rule_id = "Linux_MultiHomingCheck"
     rule_group_id = "servicehealth"
 
     directories = []
@@ -223,7 +226,7 @@ def check_general_internet_connectivity():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Machine is not connected to internet")
 
 def check_agent_service_endpoint():
-    rule_id = "Linux_AgentServiceCheck"
+    rule_id = "Linux_AgentServiceConnectivityCheck"
     rule_group_id = "connectivity"
 
     agent_endpoint = get_agent_endpoint()
@@ -235,7 +238,7 @@ def check_agent_service_endpoint():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + agent_endpoint + "} (port 443) failed", agent_endpoint)
 
 def check_jrds_endpoint(workspace):
-    rule_id = "Linux_JRDSConnectionCheck"
+    rule_id = "Linux_JRDSConnectivityCheck"
     rule_group_id = "connectivity"
 
     jrds_endpoint = get_jrds_endpoint(workspace)
@@ -247,7 +250,7 @@ def check_jrds_endpoint(workspace):
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + jrds_endpoint + "} (port 443) failed", jrds_endpoint)
 
 def check_log_analytics_endpoints():
-    rule_id = "Linux_LogAnalyticsCheck"
+    rule_id = "Linux_LogAnalyticsConnectivityCheck"
     rule_group_id = "connectivity"
 
     i = 0
