@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import sys
 import os
@@ -18,7 +18,6 @@ from os import walk
 rule_info_list = []
 output = []
 
-return_json_output = False
 oms_admin_conf_path = "/etc/opt/microsoft/omsagent/conf/omsadmin.conf"
 oms_agent_dir = "/var/opt/microsoft/omsagent"
 oms_agent_log = "/var/opt/microsoft/omsagent/log/omsagent.log"
@@ -40,7 +39,7 @@ class RuleInfo:
 
 def main(output_path=None, return_json_output="False"):
     if os.geteuid() != 0:
-        print "Please run this script in sudo"
+        print "Please run this script as root"
         exit()
 
     # supported python version 2.4.x to 2.7.x
@@ -75,9 +74,10 @@ def main(output_path=None, return_json_output="False"):
             except OSError:
                 if not os.path.isdir(output_path):
                     raise
-            log_path = output_path + "/healthcheck-" + str(datetime.datetime.utcnow().isoformat()) + ".log"
+            log_path = "%s/healthcheck-%s.log" % (output_path, datetime.datetime.utcnow().isoformat())
             f = open(log_path, "w")
             f.write("".join(output))
+            f.close()
             print "Output is written to " + log_path
 
 def get_machine_info():
@@ -85,6 +85,8 @@ def get_machine_info():
     if subprocess.call(["which", "hostnamectl"], stdout=FNULL, stderr=FNULL) == 0:
         hostname_output = os.popen("hostnamectl").read()
         write_log_output(None, None, status_debug, empty_failure_reason, "Machine Information:" + hostname_output)
+
+    FNULL.close()
 
 def check_os_version():
     rule_id = "Linux_OperatingSystemCheck"
@@ -103,7 +105,7 @@ def check_os_version():
        re.search("centos-7", os_version, re.IGNORECASE) :
         write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "Operating system version is supported")
     else:
-        log_msg = "Operating System version (" + os_version + ") is not supported. Supported versions listed here: " + supported_os_url
+        log_msg = "Operating System version (%s) is not supported. Supported versions listed here: %s" % (os_version, supported_os_url)
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, log_msg, supported_os_url)
 
 def check_oms_agent_installed():
@@ -119,6 +121,7 @@ def check_oms_agent_installed():
         for line in oms_admin_file:
             oms_admin_file_content += line + "\t"
 
+        oms_admin_file.close()
         write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "OMS Admin conf contents:" + oms_admin_file_content)
     else:
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "OMS (Operations Management Suite) Agent is not installed", oms_agent_troubleshooting_url)
@@ -139,7 +142,7 @@ def check_oms_agent_running():
         write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "OMS Agent troubleshooting guide:" + oms_agent_troubleshooting_url)
 
 def check_multihoming():
-    if os.path.isdir(oms_agent_dir) is False:
+    if not os.path.isdir(oms_agent_dir):
         return
 
     rule_id = "Linux_MultiHomingCheck"
@@ -174,7 +177,7 @@ def check_hybrid_worker_running():
     rule_id = "Linux_HybridWorkerStatusCheck"
     rule_group_id = "servicehealth"
 
-    if os.path.isfile(current_mof) == False:
+    if not os.path.isfile(current_mof):
         write_log_output(rule_id, rule_group_id, status_failed, "MissingCurrentMofFile", "Hybrid worker is not running. current_mof file:(" + current_mof + ") is missing", current_mof)
         return
 
@@ -305,7 +308,7 @@ def check_endpoint(workspace, endpoint):
 
 def get_jrds_endpoint(workspace):
     if workspace is not None:
-        worker_conf_path = "/var/opt/microsoft/omsagent/" + workspace + "/state/automationworker/worker.conf"
+        worker_conf_path = "/var/opt/microsoft/omsagent/%s/state/automationworker/worker.conf" % (workspace)
         line = find_line_in_file("jrds_base_uri", worker_conf_path)
         if line is not None:
             return line.split("=")[1].split("/")[2].strip()
@@ -315,12 +318,14 @@ def get_jrds_endpoint(workspace):
 def get_agent_endpoint():
     line = find_line_in_file("agentservice", oms_admin_conf_path)
     if line is not None:
+        # Get the text after https://
         return line.split("=")[1].split("/")[2].strip()
 
     return None
 
 def is_process_running(process_name, search_criteria, output_name):
-    grep_output = os.popen("ps aux | grep " + process_name).read()
+    command = "ps aux | grep %s | grep -v grep" % (process_name)
+    grep_output = os.popen(command).read()
     if any(search_text in grep_output for search_text in search_criteria):
         return True, grep_output
     else:
@@ -355,10 +360,10 @@ def find_line_in_file(search_text, path, file_encoding=""):
 
 
 def write_log_output(rule_id, rule_group_id, status, failure_reason, log_msg, *result_msg_args):
-    global output
-    global rule_info_list
+    global output, rule_info_list
 
-    if(type(log_msg) != str): log_msg = str(log_msg)
+    if(type(log_msg) != str):
+        log_msg = str(log_msg)
 
     if status != status_debug:
         if failure_reason == empty_failure_reason:
