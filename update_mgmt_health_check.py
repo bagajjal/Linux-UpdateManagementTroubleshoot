@@ -24,7 +24,6 @@ oms_agent_log = "/var/opt/microsoft/omsagent/log/omsagent.log"
 current_mof = "/etc/opt/omi/conf/omsconfig/configuration/Current.mof"
 status_passed = "Passed"
 status_failed = "Failed"
-status_warning = "Warning"
 status_debug = "Debug"
 empty_failure_reason = ""
 workspace = ""
@@ -89,7 +88,7 @@ def get_machine_info():
     FNULL.close()
 
 def check_os_version():
-    rule_id = "Linux_OperatingSystemCheck"
+    rule_id = "Linux.OperatingSystemCheck"
     rule_group_id = "prerequisites"
 
     os_version = platform.platform()
@@ -109,7 +108,7 @@ def check_os_version():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, log_msg, supported_os_url)
 
 def check_oms_agent_installed():
-    rule_id = "Linux_OMSAgentInstallCheck"
+    rule_id = "Linux.OMSAgentInstallCheck"
     rule_group_id = "servicehealth"
     oms_agent_troubleshooting_url = "https://github.com/Microsoft/OMS-Agent-for-Linux/blob/master/docs/Troubleshooting.md"
 
@@ -129,7 +128,7 @@ def check_oms_agent_installed():
         return
 
 def check_oms_agent_running():
-    rule_id = "Linux_OMSAgentStatusCheck"
+    rule_id = "Linux.OMSAgentStatusCheck"
     rule_group_id = "servicehealth"
     oms_agent_troubleshooting_url = "https://github.com/Microsoft/OMS-Agent-for-Linux/blob/master/docs/Troubleshooting.md"
 
@@ -142,11 +141,12 @@ def check_oms_agent_running():
         write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "OMS Agent troubleshooting guide:" + oms_agent_troubleshooting_url)
 
 def check_multihoming():
-    if not os.path.isdir(oms_agent_dir):
-        return
-
-    rule_id = "Linux_MultiHomingCheck"
+    rule_id = "Linux.MultiHomingCheck"
     rule_group_id = "servicehealth"
+
+    if not os.path.isdir(oms_agent_dir):
+        write_log_output(rule_id, rule_group_id, status_failed, "NoWorkspace", "Machine is not registered with log analytics workspace.")
+        return
 
     directories = []
     potential_workspaces = []
@@ -159,12 +159,14 @@ def check_multihoming():
         if len(directory) >= 32:
             potential_workspaces.append(directory)
 
+    workspace_id_list = str(potential_workspaces)
     if len(potential_workspaces) > 1:
-        temp = "List of workspaces: " + str(potential_workspaces)
-        write_log_output(rule_id, rule_group_id, status_warning, empty_failure_reason, "OMS Agent is multihomed. " + temp, temp)
+        write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Machine registered with more than one log analytics workspace. List of workspaces:" + workspace_id_list, workspace_id_list)
+    else:
+        write_log_output(rule_id, rule_group_id, status_passed, empty_failure_reason, "Machine registered with log analytics workspace:" + workspace_id_list, workspace_id_list)
 
 def check_hybrid_worker_package_present():
-    rule_id = "Linux_HybridWorkerPackgeCheck"
+    rule_id = "Linux.HybridWorkerPackgeCheck"
     rule_group_id = "servicehealth"
 
     if os.path.isfile("/opt/microsoft/omsconfig/modules/nxOMSAutomationWorker/VERSION") and \
@@ -174,7 +176,7 @@ def check_hybrid_worker_package_present():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Hybrid worker package is not present")
 
 def check_hybrid_worker_running():
-    rule_id = "Linux_HybridWorkerStatusCheck"
+    rule_id = "Linux.HybridWorkerStatusCheck"
     rule_group_id = "servicehealth"
 
     if not os.path.isfile(current_mof):
@@ -208,8 +210,8 @@ def check_hybrid_worker_running():
     nxOMSAutomationWorker=imp.load_source("nxOMSAutomationWorker", "./Scripts/nxOMSAutomationWorker.py")
     settings = nxOMSAutomationWorker.read_settings_from_mof_json(resourceSetting)
     if not settings.auto_register_enabled:
-        write_log_output(rule_id, rule_group_id, status_failed, "UpdateManagementSolutionDisabled", "Hybrid worker is not running")
-        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "Update Management solution is not enabled. ResourceSettings:" + resourceSetting)
+        write_log_output(rule_id, rule_group_id, status_failed, "UpdateDeploymentDisabled", "Hybrid worker is not running", current_mof)
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "Update deployment solution is not enabled. ResourceSettings:" + resourceSetting)
         return
 
     if nxOMSAutomationWorker.Test_Marshall(resourceSetting) == [0]:
@@ -220,7 +222,7 @@ def check_hybrid_worker_running():
         write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "nxOMSAutomationWorker.py path:" + automation_worker_path)
 
 def check_general_internet_connectivity():
-    rule_id = "Linux_InternetConnectionCheck"
+    rule_id = "Linux.InternetConnectionCheck"
     rule_group_id = "connectivity"
 
     if check_endpoint(None, "bing.com") and check_endpoint(None, "google.com"):
@@ -229,7 +231,7 @@ def check_general_internet_connectivity():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Machine is not connected to internet")
 
 def check_agent_service_endpoint():
-    rule_id = "Linux_AgentServiceConnectivityCheck"
+    rule_id = "Linux.AgentServiceConnectivityCheck"
     rule_group_id = "connectivity"
 
     agent_endpoint = get_agent_endpoint()
@@ -241,7 +243,7 @@ def check_agent_service_endpoint():
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + agent_endpoint + "} (port 443) failed", agent_endpoint)
 
 def check_jrds_endpoint(workspace):
-    rule_id = "Linux_JRDSConnectivityCheck"
+    rule_id = "Linux.JRDSConnectivityCheck"
     rule_group_id = "connectivity"
 
     jrds_endpoint = get_jrds_endpoint(workspace)
@@ -253,7 +255,7 @@ def check_jrds_endpoint(workspace):
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "TCP test for {" + jrds_endpoint + "} (port 443) failed", jrds_endpoint)
 
 def check_log_analytics_endpoints():
-    rule_id = "Linux_LogAnalyticsConnectivityCheck"
+    rule_id = "Linux.LogAnalyticsConnectivityCheck"
     rule_group_id = "connectivity"
 
     i = 0
