@@ -43,8 +43,8 @@ def main(output_path=None, return_json_output="False"):
 
     # supported python version 2.4.x to 2.7.x
     if not ((sys.version_info[0] == 2) and ((sys.version_info[1]>=4) and (sys.version_info[1] < 8))):
-	print("Unsupport python version:" + str(sys.version_info))
-	exit()
+        print("Unsupport python version:" + str(sys.version_info))
+        exit()
 
     global workspace
     workspace = get_workspace()
@@ -260,7 +260,7 @@ def check_log_analytics_endpoints():
 
     i = 0
     if is_fairfax_region() is True:
-        fairfax_log_analytics_endpoints = ["usge-jobruntimedata-prod-1.usgovtrafficmanager.net", "usge-agentservice-prod-1.usgovtrafficmanager.net", 
+        fairfax_log_analytics_endpoints = ["usge-jobruntimedata-prod-1.usgovtrafficmanager.net", "usge-agentservice-prod-1.usgovtrafficmanager.net",
                     "*.ods.opinsights.azure.us", "*.oms.opinsights.azure.us" ]
 
         for endpoint in fairfax_log_analytics_endpoints:
@@ -319,8 +319,8 @@ def get_jrds_endpoint(workspace):
 
 def get_agent_endpoint():
     line = find_line_in_file("agentservice", oms_admin_conf_path)
+    # Fetch the text after https://
     if line is not None:
-        # Get the text after https://
         return line.split("=")[1].split("/")[2].strip()
 
     return None
@@ -356,7 +356,7 @@ def find_line_in_file(search_text, path, file_encoding=""):
             if search_text in line:
                 current_file.close()
                 return line
-    
+
         current_file.close()
     return None
 
