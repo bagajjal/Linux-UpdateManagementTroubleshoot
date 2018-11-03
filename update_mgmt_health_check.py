@@ -381,7 +381,7 @@ def write_log_output(rule_id, rule_group_id, status, failure_reason, log_msg, *r
 
         rule_info_list.append(current_rule_info)
 
-    output.append(status + ": " + log_msg)
+    output.append(status + ": " + log_msg + "\n")
 
 if __name__ == "__main__":
     if len(sys.argv) > 2:
