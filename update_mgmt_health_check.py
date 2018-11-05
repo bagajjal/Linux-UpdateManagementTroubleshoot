@@ -121,7 +121,7 @@ def check_oms_agent_installed():
             oms_admin_file_content += line + "\t"
 
         oms_admin_file.close()
-        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "omsadmin.conf file contents:" + oms_admin_file_content)
+        write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "omsadmin.conf file contents:\n" + oms_admin_file_content)
     else:
         write_log_output(rule_id, rule_group_id, status_failed, empty_failure_reason, "Microsoft Monitoring agent is not installed", oms_agent_troubleshooting_url)
         write_log_output(rule_id, rule_group_id, status_debug, empty_failure_reason, "Microsoft Monitoring agent troubleshooting guide:" + oms_agent_troubleshooting_url)
